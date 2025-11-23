@@ -9,6 +9,7 @@ import { draw_stick_position, CIRCULARITY_DATA_SIZE } from './stick-renderer.js'
 import { ds5_finetune, isFinetuneVisible, finetune_handle_controller_input } from './modals/finetune-modal.js';
 import { calibrate_stick_centers, auto_calibrate_stick_centers } from './modals/calib-center-modal.js';
 import { calibrate_range } from './modals/calib-range-modal.js';
+import { show_input_analysis_modal, toggle_input_analysis, stop_input_analysis, isInputAnalysisVisible, input_analysis_handle_input } from './modals/input-analysis-modal.js';
 
 
 // Application State - manages app-wide state and UI
@@ -830,6 +831,11 @@ function detectFailedRangeCalibration(changes) {
 
 // Callback function to handle UI updates after controller input processing
 function handleControllerInput({ changes, inputConfig, touchPoints, batteryStatus }) {
+  // Input Analysis Hook
+  if (isInputAnalysisVisible()) {
+    input_analysis_handle_input(performance.now());
+  }
+
   const { buttonMap } = inputConfig;
 
   const current_active_tab = get_current_main_tab();
@@ -1207,6 +1213,10 @@ window.test_trigger = (side, preset) => {
   
   controller.setAdaptiveTriggerPreset(params);
 }
+
+window.show_input_analysis_modal = () => show_input_analysis_modal(controller);
+window.toggle_input_analysis = toggle_input_analysis;
+window.stop_input_analysis = stop_input_analysis;
 
 // Auto-initialize the application when the module loads
 gboot();

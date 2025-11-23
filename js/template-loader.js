@@ -97,7 +97,8 @@ export async function loadAllTemplates() {
       'auto-calib-center-modal',
       'range-modal',
       'edge-progress-modal',
-      'edge-modal'
+      'edge-modal',
+      'input-analysis-modal' // <-- New Template Added Here
     ];
 
     // Create an array of promises

@@ -28,7 +28,10 @@ const app = {
 
   // Session tracking
   gj: 0,
-  gu: 0
+  gu: 0,
+  
+  // Android Bridge Flag
+  isAndroid: false
 };
 
 const ll_data = new Array(CIRCULARITY_DATA_SIZE);
@@ -49,6 +52,13 @@ const domCache = {
 
 function gboot() {
   app.gu = crypto.randomUUID();
+
+  // Detect Android WebView Interface
+  // في تطبيق الأندرويد، سنقوم بحقن كائن جافاسكريبت باسم "AndroidBridge"
+  if (window.AndroidBridge) {
+      app.isAndroid = true;
+      console.log("Android Bridge Detected");
+  }
 
   async function initializeApp() {
     // Cache DOM elements after DOM is loaded
@@ -154,7 +164,8 @@ function gboot() {
     initializeApp();
   }
 
-  if (!("hid" in navigator)) {
+  // Check for WebHID OR Android Bridge
+  if (!("hid" in navigator) && !app.isAndroid) {
     setDisplay('offlinebar', false);
     setDisplay('onlinebar', false);
     setDisplay('missinghid', true);
@@ -162,7 +173,9 @@ function gboot() {
   }
 
   setDisplay('offlinebar', true);
-  navigator.hid.addEventListener("disconnect", handleDisconnectedDevice);
+  if (!app.isAndroid) {
+      navigator.hid.addEventListener("disconnect", handleDisconnectedDevice);
+  }
 }
 
 // Helper to show/hide elements by ID
@@ -189,67 +202,161 @@ async function connect() {
   clearAllAlerts();
   await sleep(200);
 
+  const btnConnect = document.getElementById("btnconnect");
+  const connectSpinner = document.getElementById("connectspinner");
+  
+  btnConnect.disabled = true;
+  connectSpinner.style.display = 'inline-block';
+  await sleep(100);
+
   try {
-    const btnConnect = document.getElementById("btnconnect");
-    const connectSpinner = document.getElementById("connectspinner");
-    
-    btnConnect.disabled = true;
-    connectSpinner.style.display = 'inline-block';
-    await sleep(100);
+    if (app.isAndroid) {
+        // Android Flow: Request permission from the App
+        // سيقوم كود الجافا بالرد عبر استدعاء window.onAndroidDeviceConnected
+        window.AndroidBridge.requestUsbPermission();
+        // لا ننتظر هنا، الرد سيأتي Asynchronous من التطبيق
+    } else {
+        // Standard WebHID Flow
+        const supportedModels = ControllerFactory.getSupportedModels();
+        const requestParams = { filters: supportedModels };
+        let devices = await navigator.hid.getDevices();
+        if (devices.length == 0) {
+          devices = await navigator.hid.requestDevice(requestParams);
+        }
+        if (devices.length == 0) {
+          throw new Error("No device selected");
+        }
 
-    const supportedModels = ControllerFactory.getSupportedModels();
-    const requestParams = { filters: supportedModels };
-    let devices = await navigator.hid.getDevices();
-    if (devices.length == 0) {
-      devices = await navigator.hid.requestDevice(requestParams);
-    }
-    if (devices.length == 0) {
-      btnConnect.disabled = false;
-      connectSpinner.style.display = 'none';
-      await disconnect();
-      return;
+        if (devices.length > 1) {
+          infoAlert(l("Please connect only one controller at time."));
+          throw new Error("Multiple devices connected");
+        }
+
+        const [device] = devices;
+        if(device.opened) {
+          console.log("Device already opened, closing it before re-opening.");
+          await device.close();
+          await sleep(500);
+        }
+        await device.open();
+
+        la("connect", {"p": device.productId, "v": device.vendorId});
+        device.oninputreport = continue_connection; 
+        // Manual trigger for first connection
+        // In WebHID oninputreport is an event, but here we pass the event-like structure manually if needed
+        // For standard WebHID, we wait for the first report or trigger UI setup:
+        // We need to manually trigger UI setup because we might not get a report immediately
+        // Creating a fake report structure to init the controller manager
+        // Note: actual input reports will flow via oninputreport
+        
+        // Initialize UI immediately with the device
+        await setupDeviceUI(device);
     }
 
-    if (devices.length > 1) {
-      infoAlert(l("Please connect only one controller at time."));
-      btnConnect.disabled = false;
-      connectSpinner.style.display = 'none';
-      await disconnect();
-      return;
-    }
-
-    const [device] = devices;
-    if(device.opened) {
-      console.log("Device already opened, closing it before re-opening.");
-      await device.close();
-      await sleep(500);
-    }
-    await device.open();
-
-    la("connect", {"p": device.productId, "v": device.vendorId});
-    device.oninputreport = continue_connection; 
   } catch(error) {
-    document.getElementById("btnconnect").disabled = false;
-    document.getElementById("connectspinner").style.display = 'none';
+    console.error("Connection failed", error);
+    btnConnect.disabled = false;
+    connectSpinner.style.display = 'none';
     await disconnect();
-    throw error;
   }
 }
 
-async function continue_connection({data, device}) {
-  try {
-    if (!controller || controller.isConnected()) {
-      device.oninputreport = null; 
-      return;
+// This function is called by Android App when permission is granted and connection opened
+// deviceParams: { vendorId, productId, productName }
+window.onAndroidDeviceConnected = async function(deviceParams) {
+    console.log("Android Device Connected:", deviceParams);
+    
+    // Create a "Virtual" HID Device compatible with our Controller Logic
+    const virtualDevice = {
+        vendorId: deviceParams.vendorId,
+        productId: deviceParams.productId,
+        productName: deviceParams.productName || "Android Device",
+        opened: true,
+        
+        // Android Bridge sends reports via this callback
+        oninputreport: null, 
+
+        // Send Feature Report -> Bridge
+        sendFeatureReport: async (reportId, data) => {
+            // Convert Uint8Array to Hex String or Base64 for transfer
+            const hexData = [...data].map(b => b.toString(16).padStart(2,'0')).join('');
+            const responseHex = await window.AndroidBridge.sendFeatureReport(reportId, hexData);
+            
+            // Convert response Hex back to DataView
+            // Assuming generic response needed for logic
+            return; // Feature report sends usually don't return data immediately in WebHID spec (promise resolves void)
+        },
+
+        // Receive Feature Report -> Bridge
+        receiveFeatureReport: async (reportId) => {
+            const responseHex = await window.AndroidBridge.receiveFeatureReport(reportId);
+            // Convert Hex string to DataView
+            const pairs = responseHex.match(/[\w\d]{2}/g) || [];
+            const buffer = new Uint8Array(pairs.map(h => parseInt(h, 16))).buffer;
+            return new DataView(buffer);
+        },
+
+        // Send Output Report -> Bridge
+        sendReport: async (reportId, data) => {
+             const hexData = [...data].map(b => b.toString(16).padStart(2,'0')).join('');
+             await window.AndroidBridge.sendOutputReport(reportId, hexData);
+        },
+
+        close: async () => {
+            await window.AndroidBridge.closeDevice();
+        }
+    };
+
+    la("connect", {"p": virtualDevice.productId, "v": virtualDevice.vendorId});
+    
+    try {
+        await setupDeviceUI(virtualDevice);
+    } catch (e) {
+        console.error("Android Setup Error", e);
+        await disconnect();
+    }
+};
+
+// Called by Android App when new input data arrives
+// reportId: int, dataHex: string
+window.onAndroidInputReport = function(reportId, dataHex) {
+    if (controller && controller.currentController) {
+        const handler = controller.currentController.device.oninputreport;
+        if (handler) {
+            // Convert hex to DataView
+            const pairs = dataHex.match(/[\w\d]{2}/g) || [];
+            const buffer = new Uint8Array(pairs.map(h => parseInt(h, 16))).buffer;
+            const dataView = new DataView(buffer);
+            
+            // Construct event-like object expected by handleControllerInput (via continue_connection logic adapter)
+            // Actually, continue_connection is used for initial setup, then controller.getInputHandler() is used.
+            // The structure passed to inputHandler needs to be { data: DataView, device: ... }
+            handler({ data: dataView, device: controller.currentController.device, reportId: reportId });
+        }
+    }
+};
+
+// Called by Android App when device is detached
+window.onAndroidDeviceDetached = async function() {
+    await disconnect();
+};
+
+
+// Refactored logic to setup UI, shared by WebHID and Android
+async function setupDeviceUI(device) {
+    // We reuse continue_connection logic but abstract it
+    // Since continue_connection was designed as an event handler, let's refactor slightly
+    // We will call the logic directly.
+    
+    if (!controller) {
+         // Should not happen as we init controller in connect()
+         controller = initControllerManager({ handleNvStatusUpdate });
+         controller.setInputHandler(handleControllerInput);
     }
 
-    const reportLen = data.byteLength;
-    if(reportLen != 63) {
-      infoAlert(l("The device is connected via Bluetooth. Disconnect and reconnect using a USB cable instead."));
-      await disconnect();
-      return;
-    }
-
+    // Prepare initial data for identification (WebHID requires a report, Android might not send one immediately)
+    // We can rely on PID/VID for identification mostly.
+    
     function applyDeviceUI({ showInfo, showFinetune, showInfoTab, showFourStepCalib, showQuickCalib }) {
       toggleElement("infoshowall", showInfo);
       toggleElement("ds5finetune", showFinetune);
@@ -265,6 +372,7 @@ async function continue_connection({data, device}) {
       controllerInstance = ControllerFactory.createControllerInstance(device);
       controller.setControllerInstance(controllerInstance);
 
+      // Fetch info immediately
       info = await controllerInstance.getInfo();
 
       if (controllerInstance.initializeCurrentOutputState) {
@@ -286,6 +394,7 @@ async function continue_connection({data, device}) {
     applyDeviceUI(ui);
 
     console.log("Setting input report handler.");
+    // For WebHID, this attaches to the event. For Android, the Java code calls window.onAndroidInputReport which delegates here.
     device.oninputreport = controller.getInputHandler();
 
     const deviceName = ControllerFactory.getDeviceName(device.productId);
@@ -299,7 +408,6 @@ async function continue_connection({data, device}) {
     const nvStatusEl = document.getElementById("d-nvstatus");
     if(nvStatusEl) nvStatusEl.textContent = l("Unknown");
     
-    // Activate controller tab using Bootstrap API
     const triggerEl = document.querySelector('#controller-tab');
     if(triggerEl) bootstrap.Tab.getOrCreateInstance(triggerEl).show();
 
@@ -336,15 +444,22 @@ async function continue_connection({data, device}) {
     if(model == "DS5_Edge") {
       show_edge_modal();
     }
-  } catch(err) {
-    await disconnect();
-    throw err;
-  } finally {
+    
+    // Clean up spinners
     const btnConnect = document.getElementById("btnconnect");
     const connectSpinner = document.getElementById("connectspinner");
     if(btnConnect) btnConnect.disabled = false;
     if(connectSpinner) connectSpinner.style.display = 'none';
-  }
+}
+
+// Legacy support for WebHID event listener
+async function continue_connection(event) {
+    // This is only hit by standard WebHID 'inputreport' event before proper initialization
+    // But since we init explicitly now, we might not need this as an entry point.
+    // Kept for safety if WebHID fires input immediately.
+    if (!controller || controller.isConnected()) return; 
+    // If we are here, it means we got an input report but UI isn't ready?
+    // We'll handle setup in connect() explicitly.
 }
 
 async function disconnect() {

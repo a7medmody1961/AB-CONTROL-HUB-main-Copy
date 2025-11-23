@@ -1,9 +1,10 @@
 // اسم الكيش بتاعنا، لو غيرت أي ملفات أساسية، غيّر الرقم ده عشان تجبره يحدث
-const CACHE_NAME = 'ab-control-hub-v2';
+// تم التحديث للإصدار الثالث لضمان تحميل تعديلات الـ Android Bridge
+const CACHE_NAME = 'ab-control-hub-v3-android-bridge';
 
 // الملفات الأساسية اللي عاوزينها تشتغل أوفلاين
 const urlsToCache = [
-  './', // <-- *** تم تعديل السطر ده ***
+  './', 
   'index.html',
   'site.webmanifest',
   'favicon.ico',
@@ -16,7 +17,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        console.log('Opened cache');
+        console.log('Opened cache: ' + CACHE_NAME);
         return cache.addAll(urlsToCache);
       })
   );
@@ -58,6 +59,7 @@ self.addEventListener('activate', (event) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           if (cacheWhitelist.indexOf(cacheName) === -1) {
+            console.log('Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })

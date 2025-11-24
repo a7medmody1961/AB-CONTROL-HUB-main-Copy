@@ -252,17 +252,19 @@ window.onAndroidDeviceConnected = async function(deviceParams) {
         },
 
         receiveFeatureReport: async (reportId) => {
-            // 1. استقبال البيانات Hex من الجافا
+            // 1. استقبال البيانات Hex
             const responseHex = await window.AndroidBridge.receiveFeatureReport(reportId);
             
-            // 2. تحويلها لبايتات
+            // 2. تحويلها لمصفوفة
             const pairs = responseHex.match(/[\w\d]{2}/g) || [];
             let buffer = new Uint8Array(pairs.map(h => parseInt(h, 16)));
 
-            // 3. التصحيح الذكي (الحل لمشكلة الدراع الكوبي)
-            // لو أول بايت هو نفسه رقم التقرير، نمسحه عشان البيانات تظبط
-            if (buffer.length > 0 && buffer[0] === reportId) {
-                // console.log(`[Fix] Removed Report ID (${reportId}) from data.`);
+            // 3. الحل الإجباري (Force Slice)
+            // بما أننا على الأندرويد (USB Host)، البيانات دائماً تبدأ برقم التقرير.
+            // والموقع يتوقع البيانات صافية بدون هذا الرقم.
+            // لذلك سنحذفه فوراً وبدون تفكير.
+            if (buffer.length > 0) {
+                // console.log(`[Force Fix] Removed first byte (Report ID) from ${buffer.length} bytes.`);
                 buffer = buffer.slice(1);
             }
 

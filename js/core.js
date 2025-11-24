@@ -254,8 +254,19 @@ window.onAndroidDeviceConnected = async function(deviceParams) {
         receiveFeatureReport: async (reportId) => {
             const responseHex = await window.AndroidBridge.receiveFeatureReport(reportId);
             const pairs = responseHex.match(/[\w\d]{2}/g) || [];
-            const buffer = new Uint8Array(pairs.map(h => parseInt(h, 16))).buffer;
-            return new DataView(buffer);
+            let buffer = new Uint8Array(pairs.map(h => parseInt(h, 16)));
+
+            // --- التصحيح الذكي للبيانات ---
+            // نظام الأندرويد غالباً يرجع الـ Report ID في أول خانة
+            // بينما الموقع يتوقع البيانات فقط
+            // لذلك، لو لقينا أول رقم هو نفسه الـ reportId، نمسحه عشان البيانات تتظبط
+            if (buffer.length > 0 && buffer[0] === reportId) {
+                // console.log("Stripping Report ID byte from response"); // للتجربة
+                buffer = buffer.slice(1);
+            }
+            // -----------------------------
+
+            return new DataView(buffer.buffer);
         },
 
         sendReport: async (reportId, data) => {

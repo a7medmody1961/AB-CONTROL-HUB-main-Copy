@@ -252,20 +252,15 @@ window.onAndroidDeviceConnected = async function(deviceParams) {
         },
 
         receiveFeatureReport: async (reportId) => {
+            // استقبال البيانات Hex من الجافا
             const responseHex = await window.AndroidBridge.receiveFeatureReport(reportId);
+            
+            // تحويلها لمصفوفة بايتات
             const pairs = responseHex.match(/[\w\d]{2}/g) || [];
-            let buffer = new Uint8Array(pairs.map(h => parseInt(h, 16)));
+            const buffer = new Uint8Array(pairs.map(h => parseInt(h, 16)));
 
-            // --- التصحيح الذكي للبيانات ---
-            // نظام الأندرويد غالباً يرجع الـ Report ID في أول خانة
-            // بينما الموقع يتوقع البيانات فقط
-            // لذلك، لو لقينا أول رقم هو نفسه الـ reportId، نمسحه عشان البيانات تتظبط
-            if (buffer.length > 0 && buffer[0] === reportId) {
-                // console.log("Stripping Report ID byte from response"); // للتجربة
-                buffer = buffer.slice(1);
-            }
-            // -----------------------------
-
+            // إلغاء "التصحيح الذكي" لأنه كان يفسد البيانات في حالتك
+            // نرسل البيانات الخام كما هي
             return new DataView(buffer.buffer);
         },
 

@@ -487,38 +487,35 @@ async function init_svg_controller(model) {
   const svgContainer = document.getElementById('controller-svg-placeholder');
   if(!svgContainer) return;
 
-  let svgFileName;
-  if (model === 'DS4') {
-    svgFileName = 'dualshock-controller.svg';
-  } else if (model === 'DS5' || model === 'DS5_Edge') {
-    svgFileName = 'dualsense-controller.svg';
-  } else {
-    throw new Error(`Unknown controller model: ${model}`);
+  let svgFileName = (model === 'DS4') ? 'dualshock-controller.svg' : 'dualsense-controller.svg';
+
+  try {
+      // محاولة تحميل الصورة
+      let svgContent;
+      if (window.BUNDLED_ASSETS && window.BUNDLED_ASSETS.svg && window.BUNDLED_ASSETS.svg[svgFileName]) {
+        svgContent = window.BUNDLED_ASSETS.svg[svgFileName];
+      } else {
+        const response = await fetch(`assets/${svgFileName}`);
+        if (!response.ok) throw new Error("SVG Not Found");
+        svgContent = await response.text();
+      }
+      svgContainer.innerHTML = svgContent;
+      
+      // تلوين الصورة
+      const lightBlue = '#7ecbff';
+      const midBlue = '#3399cc';
+      const dualshock = document.getElementById('Controller');
+      set_svg_group_color(dualshock, lightBlue);
+      ['Button_outlines', 'Button_outlines_behind', 'L3_outline', 'R3_outline', 'Trackpad_outline'].forEach(id => {
+        const group = document.getElementById(id);
+        set_svg_group_color(group, midBlue);
+      });
+      
+  } catch (e) {
+      console.warn("Could not load controller image, continuing without it.", e);
+      // لا نوقف التنفيذ، بل نكمل ليظهر باقي الواجهة
+      svgContainer.innerHTML = "<p style='color:white; text-align:center;'>Controller Image Not Loaded</p>";
   }
-
-  let svgContent;
-
-  if (window.BUNDLED_ASSETS && window.BUNDLED_ASSETS.svg && window.BUNDLED_ASSETS.svg[svgFileName]) {
-    svgContent = window.BUNDLED_ASSETS.svg[svgFileName];
-  } else {
-    const response = await fetch(`assets/${svgFileName}`);
-    if (!response.ok) {
-      throw new Error(`Failed to load controller SVG: ${svgFileName}`);
-    }
-    svgContent = await response.text();
-  }
-
-  svgContainer.innerHTML = svgContent;
-
-  const lightBlue = '#7ecbff';
-  const midBlue = '#3399cc';
-  const dualshock = document.getElementById('Controller');
-  set_svg_group_color(dualshock, lightBlue);
-
-  ['Button_outlines', 'Button_outlines_behind', 'L3_outline', 'R3_outline', 'Trackpad_outline'].forEach(id => {
-    const group = document.getElementById(id);
-    set_svg_group_color(group, midBlue);
-  });
 }
 
 function collectCircularityData(stickStates, leftData, rightData) {

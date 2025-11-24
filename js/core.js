@@ -252,22 +252,17 @@ window.onAndroidDeviceConnected = async function(deviceParams) {
         },
 
         receiveFeatureReport: async (reportId) => {
-            // 1. استقبال البيانات Hex
+            // 1. استقبال البيانات Hex من الجافا
             const responseHex = await window.AndroidBridge.receiveFeatureReport(reportId);
             
             // 2. تحويلها لبايتات
             const pairs = responseHex.match(/[\w\d]{2}/g) || [];
             let buffer = new Uint8Array(pairs.map(h => parseInt(h, 16)));
 
-            // 3. طباعة البيانات في الكونسول (عشان لو حصل خطأ نعرف السبب فوراً)
-            console.log(`[Debug] Report ${reportId} Raw Data:`, responseHex);
-
-            // 4. التصحيح الذكي (Smart Correction)
-            // بروتوكول HID بيقول إن البيانات لا يجب أن تحتوي على Report ID في البداية
-            // لو لقينا إن أول بايت هو نفسه الـ reportId، يبقى لازم نمسحه
+            // 3. التصحيح الذكي (الحل لمشكلة الدراع الكوبي)
+            // لو أول بايت هو نفسه رقم التقرير، نمسحه عشان البيانات تظبط
             if (buffer.length > 0 && buffer[0] === reportId) {
-                console.log(`[Debug] Stripping Report ID (${reportId}) from response.`);
-                // ننسخ المصفوفة بدءاً من العنصر رقم 1
+                // console.log(`[Fix] Removed Report ID (${reportId}) from data.`);
                 buffer = buffer.slice(1);
             }
 

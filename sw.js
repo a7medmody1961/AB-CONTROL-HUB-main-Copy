@@ -1,6 +1,6 @@
 // اسم الكيش بتاعنا، لو غيرت أي ملفات أساسية، غيّر الرقم ده عشان تجبره يحدث
 // تم التحديث للإصدار الثالث لضمان تحميل تعديلات الـ Android Bridge
-const CACHE_NAME = 'ab-control-hub-v3-android-bridge';
+const CACHE_NAME = 'ab-control-hub-v5-android-bridge';
 
 // الملفات الأساسية اللي عاوزينها تشتغل أوفلاين
 const urlsToCache = [
